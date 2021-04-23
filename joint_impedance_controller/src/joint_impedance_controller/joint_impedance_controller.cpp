@@ -204,9 +204,9 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
     }
     if (!m_controller_nh.getParam("torque_deadband", torque_deadband))
     {
-      ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'torque_deadband' does not exist");
-      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-      return false;
+      ROS_DEBUG_STREAM(m_controller_nh.getNamespace()+"/'torque_deadband' does not exist");
+      ROS_DEBUG("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
+      wrench_deadband.resize(m_nax,0);
     }
     
     for (unsigned int iAx=0;iAx<m_nax;iAx++)
