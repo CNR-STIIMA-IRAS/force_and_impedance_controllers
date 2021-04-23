@@ -1,0 +1,8 @@
+<library path="lib/libcartesian_impedance_controller">
+  <class name="cnr_control/CartImpedanceController" type="cnr_control::CartImpedanceController" base_class_type="controller_interface::ControllerBase">
+    <description>
+      Cart Impedance Controller
+    </description>
+  </class>
+</library>
+

@@ -1,0 +1,8 @@
+<library path="lib/libjoint_impedance_controller">
+  <class name="cnr_control/JointImpedanceController" type="cnr_control::JointImpedanceController" base_class_type="controller_interface::ControllerBase">
+    <description>
+      Joint Impedance Control
+    </description>
+  </class>
+</library>
+
