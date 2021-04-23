@@ -9,7 +9,7 @@ Angular error is angle*axis (see [this page](https://en.wikipedia.org/wiki/Axis%
 ```yaml
   your_cart_impedance_controller:
     # REQUIRED:
-    type                  : "itia/control/CartImpedanceController"
+    type                  : "cnr_control/CartImpedanceController"
     inertia               : [ 10, 10, 10, 10, 10, 10]      # in [kg, kg, kg, kg*m^2, kg*m^2, kg*m^2]
     stiffness             : [1200,800,1200, 120,120,120]   # in [N/m, N/m, N/m, Nm/rad, Nm/rad, Nm/rad]
     damping               : [120,120,120, 120,120,120]     # in [N/(m/s), N/(m/s), N/(m/s), Nm/(rad/s), Nm/rad/s), Nm/rad/s)]
