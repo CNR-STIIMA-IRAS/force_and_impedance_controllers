@@ -45,6 +45,7 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
 
     ROS_INFO("subscribing %s",joint_target.c_str());
     m_target_sub.reset(new ros_helper::SubscriptionNotifier<sensor_msgs::JointState>(m_controller_nh,joint_target,1));
+    m_target_sub->setAdvancedCallback(boost::bind(&cnr_control::JointImpedanceController::setTargetCallback,this,_1));
 
     if (!m_controller_nh.getParam("use_wrench", m_use_wrench))
     {
@@ -87,6 +88,11 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
       }
       m_chain_bs = rosdyn::createChain(urdf_model,m_base_frame,m_sensor_frame,gravity);
       m_chain_bs->setInputJointsName(m_joint_names);
+      if (!m_controller_nh.getParam("external_wrench_topic", external_wrench ))
+      {
+        ROS_INFO_STREAM(m_controller_nh.getNamespace()+"/'external_wrench' does not exist. Default value 'external_wrench' superimposed.");
+        external_wrench = "external_wrench";
+      }
       m_wrench_sub.reset(new ros_helper::SubscriptionNotifier<geometry_msgs::WrenchStamped>(m_controller_nh,external_wrench,1));
       m_wrench_sub->setAdvancedCallback(boost::bind(&cnr_control::JointImpedanceController::setWrenchCallback,this,_1));
     }
@@ -354,6 +360,7 @@ void JointImpedanceController::update(const ros::Time& time, const ros::Duration
   }
   else
   {
+    ROS_FATAL_STREAM_THROTTLE(2.0,"target: "<<m_target_ok <<", effort"<< m_effort_ok);
     for (unsigned int iAx=0;iAx<m_nax;iAx++)
       m_joint_handles.at(iAx).setCommand(m_x(iAx),0.0,0.0);
     m_is_configured=m_target_ok && m_effort_ok;
