@@ -197,18 +197,42 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
       ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
       return false;
     }
-    if (!m_controller_nh.getParam("damping", damping))
-    {
-      ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'damping' does not exist");
-      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-      return false;
-    }
     if (!m_controller_nh.getParam("stiffness", stiffness))
     {
       ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'stiffness' does not exist");
       ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
       return false;
     }
+
+    if(m_controller_nh.hasParam("damping_ratio"))
+    {
+        ROS_INFO("using damping ratio");
+        std::vector<double> damping_ratio;
+        if (!m_controller_nh.getParam("damping_ratio", damping_ratio))
+        {
+          ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'damping_ratio' does not exist");
+          ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
+          return false;
+        }
+
+        for (unsigned int iAx=0;iAx<m_nax;iAx++)
+        {
+            ROS_FATAL_STREAM("quii");
+          damping.push_back(2*damping_ratio.at(iAx)*sqrt(stiffness.at(iAx)*inertia.at(iAx)));
+          ROS_FATAL_STREAM(damping.at(iAx));
+        }
+    }
+    else
+    {
+      if (!m_controller_nh.getParam("damping", damping))
+      {
+        ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'damping' does not exist");
+        ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
+        return false;
+      }
+
+    }
+
     if (!m_controller_nh.getParam("torque_deadband", torque_deadband))
     {
       ROS_DEBUG_STREAM(m_controller_nh.getNamespace()+"/'torque_deadband' does not exist");
