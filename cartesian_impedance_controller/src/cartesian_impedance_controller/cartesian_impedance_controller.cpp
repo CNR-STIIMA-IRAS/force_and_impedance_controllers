@@ -15,8 +15,6 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
   m_controller_nh = controller_nh;
   m_hw = hw;
 
-  m_init_wrench = true;
-
   m_controller_nh.setCallbackQueue(&m_queue);
 
 
@@ -74,6 +72,19 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
       ROS_WARN_STREAM(m_controller_nh.getNamespace()+"/external_wrench does not exist. Default value 'external_wrench' superimposed");
       external_wrench = "external_wrench";
     }
+
+
+    bool zeroing_sensor_at_startup;
+    if (!m_controller_nh.getParam("zeroing_sensor_at_startup", zeroing_sensor_at_startup))
+    {
+      ROS_INFO_STREAM(m_controller_nh.getNamespace()+"/'zeroing_sensor_at_startup' does not exist. Default value true.");
+    }
+    if(zeroing_sensor_at_startup)
+        m_init_wrench = true;
+    else
+        m_init_wrench = false;
+
+
 
     if (!controller_nh.getParam("controlled_joint",m_joint_names))
     {

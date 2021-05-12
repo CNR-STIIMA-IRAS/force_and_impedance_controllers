@@ -23,7 +23,6 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
 
     m_target_ok   = false;
     m_effort_ok   = false;
-    m_init_wrench = true;
 
     std::string joint_target = "joint_target";
     std::string external_torques = "external_torques";
@@ -53,6 +52,16 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
       ROS_WARN_STREAM(m_controller_nh.getNamespace()+"/'use_wrench' does not exist. Default value false.");
       m_use_wrench = false;
     }
+
+    bool zeroing_sensor_at_startup;
+    if (!m_controller_nh.getParam("zeroing_sensor_at_startup", zeroing_sensor_at_startup))
+    {
+      ROS_INFO_STREAM(m_controller_nh.getNamespace()+"/'zeroing_sensor_at_startup' does not exist. Default value true.");
+    }
+    if(zeroing_sensor_at_startup)
+        m_init_wrench = true;
+    else
+        m_init_wrench = false;
 
     Eigen::Vector3d gravity;
     gravity << 0, 0, -9.806;
