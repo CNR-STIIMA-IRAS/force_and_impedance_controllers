@@ -226,7 +226,6 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
 
         for (unsigned int iAx=0;iAx<m_nax;iAx++)
         {
-            ROS_FATAL_STREAM("quii");
           damping.push_back(2*damping_ratio.at(iAx)*sqrt(stiffness.at(iAx)*inertia.at(iAx)));
           ROS_FATAL_STREAM(damping.at(iAx));
         }
