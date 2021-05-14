@@ -33,6 +33,7 @@ protected:
   bool m_is_configured;
   bool m_target_ok;
   bool m_effort_ok;
+  bool m_init_wrench;
   bool m_use_wrench;
   std::vector<hardware_interface::PosVelEffJointHandle> m_joint_handles;
 
@@ -56,6 +57,7 @@ protected:
 
   Eigen::VectorXd m_torque;
   Eigen::VectorXd m_wrench_of_t_in_b;
+  Eigen::Vector6d m_wrench_0;
 
   std::string m_base_frame;
   std::string m_tool_frame;

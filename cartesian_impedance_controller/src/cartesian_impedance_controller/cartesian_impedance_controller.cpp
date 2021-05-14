@@ -73,6 +73,19 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
       external_wrench = "external_wrench";
     }
 
+
+    bool zeroing_sensor_at_startup;
+    if (!m_controller_nh.getParam("zeroing_sensor_at_startup", zeroing_sensor_at_startup))
+    {
+      ROS_INFO_STREAM(m_controller_nh.getNamespace()+"/'zeroing_sensor_at_startup' does not exist. Default value true.");
+    }
+    if(zeroing_sensor_at_startup)
+        m_init_wrench = true;
+    else
+        m_init_wrench = false;
+
+
+
     if (!controller_nh.getParam("controlled_joint",m_joint_names))
     {
       ROS_INFO("/controlled_joint not specified, using all");
@@ -509,12 +522,25 @@ void CartImpedanceController::setWrenchCallback(const geometry_msgs::WrenchStamp
 
   try
   {
-    m_wrench_of_sensor_in_sensor(0) = msg->wrench.force.x ;
-    m_wrench_of_sensor_in_sensor(1) = msg->wrench.force.y ;
-    m_wrench_of_sensor_in_sensor(2) = msg->wrench.force.z ;
-    m_wrench_of_sensor_in_sensor(3) = msg->wrench.torque.x;
-    m_wrench_of_sensor_in_sensor(4) = msg->wrench.torque.y;
-    m_wrench_of_sensor_in_sensor(5) = msg->wrench.torque.z;
+
+    if(m_init_wrench)
+    {
+      m_wrench_0(0)=msg->wrench.force.x;
+      m_wrench_0(1)=msg->wrench.force.y;
+      m_wrench_0(2)=msg->wrench.force.z;
+      m_wrench_0(3)=msg->wrench.torque.x;
+      m_wrench_0(4)=msg->wrench.torque.y;
+      m_wrench_0(5)=msg->wrench.torque.z;
+
+      m_init_wrench = false;
+    }
+
+    m_wrench_of_sensor_in_sensor(0) = msg->wrench.force.x  - m_wrench_0(0);
+    m_wrench_of_sensor_in_sensor(1) = msg->wrench.force.y  - m_wrench_0(1);
+    m_wrench_of_sensor_in_sensor(2) = msg->wrench.force.z  - m_wrench_0(2);
+    m_wrench_of_sensor_in_sensor(3) = msg->wrench.torque.x - m_wrench_0(3);
+    m_wrench_of_sensor_in_sensor(4) = msg->wrench.torque.y - m_wrench_0(4);
+    m_wrench_of_sensor_in_sensor(5) = msg->wrench.torque.z - m_wrench_0(5);
 
     Eigen::Affine3d T_base_tool=m_chain_bt->getTransformation(m_x);
     Eigen::MatrixXd jacobian_of_tool_in_base = m_chain_bt->getJacobian(m_x);

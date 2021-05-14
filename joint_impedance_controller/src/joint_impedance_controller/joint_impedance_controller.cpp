@@ -15,14 +15,14 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
   m_root_nh = root_nh;
   m_controller_nh = controller_nh;
   m_hw = hw;
-  
+
   m_controller_nh.setCallbackQueue(&m_queue);
-  
+
   try
   {
-    
-    m_target_ok=false;
-    m_effort_ok=false;
+
+    m_target_ok   = false;
+    m_effort_ok   = false;
 
     std::string joint_target = "joint_target";
     std::string external_torques = "external_torques";
@@ -52,6 +52,16 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
       ROS_WARN_STREAM(m_controller_nh.getNamespace()+"/'use_wrench' does not exist. Default value false.");
       m_use_wrench = false;
     }
+
+    bool zeroing_sensor_at_startup;
+    if (!m_controller_nh.getParam("zeroing_sensor_at_startup", zeroing_sensor_at_startup))
+    {
+      ROS_INFO_STREAM(m_controller_nh.getNamespace()+"/'zeroing_sensor_at_startup' does not exist. Default value true.");
+    }
+    if(zeroing_sensor_at_startup)
+        m_init_wrench = true;
+    else
+        m_init_wrench = false;
 
     Eigen::Vector3d gravity;
     gravity << 0, 0, -9.806;
@@ -107,7 +117,7 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
       m_effort_sub->setAdvancedCallback(boost::bind(&cnr_control::JointImpedanceController::setEffortCallback,this,_1));
     }
 
-    
+
     m_joint_handles.resize(m_nax);
     for (unsigned int iAx=0;iAx<m_nax;iAx++)
     {
@@ -119,14 +129,14 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
     m_x.resize(m_nax);
     m_Dx.resize(m_nax);
     m_DDx.resize(m_nax);
-    
+
     m_Jinv.resize(m_nax);
     m_damping.resize(m_nax);
     m_damping_dafault.resize(m_nax);
     m_k.resize(m_nax);
     m_torque_deadband.resize(m_nax);
     m_torque.resize(m_nax);
-    
+
     m_target.setZero();
     m_Dtarget.setZero();
     m_x.setZero();
@@ -188,17 +198,11 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
       else
         m_acceleration_limits(iAx)=10*m_velocity_limits(iAx);
     }
-    
+
     std::vector<double> inertia, damping, stiffness, torque_deadband;
     if (!m_controller_nh.getParam("inertia", inertia))
     {
       ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'inertia' does not exist");
-      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-      return false;
-    }
-    if (!m_controller_nh.getParam("damping", damping))
-    {
-      ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'damping' does not exist");
       ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
       return false;
     }
@@ -208,13 +212,42 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
       ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
       return false;
     }
+
+    if(m_controller_nh.hasParam("damping_ratio"))
+    {
+        ROS_INFO("using damping ratio");
+        std::vector<double> damping_ratio;
+        if (!m_controller_nh.getParam("damping_ratio", damping_ratio))
+        {
+          ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'damping_ratio' does not exist");
+          ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
+          return false;
+        }
+
+        for (unsigned int iAx=0;iAx<m_nax;iAx++)
+        {
+          damping.push_back(2*damping_ratio.at(iAx)*sqrt(stiffness.at(iAx)*inertia.at(iAx)));
+          ROS_FATAL_STREAM(damping.at(iAx));
+        }
+    }
+    else
+    {
+      if (!m_controller_nh.getParam("damping", damping))
+      {
+        ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'damping' does not exist");
+        ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
+        return false;
+      }
+
+    }
+
     if (!m_controller_nh.getParam("torque_deadband", torque_deadband))
     {
       ROS_DEBUG_STREAM(m_controller_nh.getNamespace()+"/'torque_deadband' does not exist");
       ROS_DEBUG("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
       torque_deadband.resize(m_nax,0);
     }
-    
+
     for (unsigned int iAx=0;iAx<m_nax;iAx++)
     {
       if (inertia.at(iAx)<=0)
@@ -224,7 +257,7 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
       }
       else
         m_Jinv(iAx)=1.0/inertia.at(iAx);
-      
+
       if (damping.at(iAx)<=0)
       {
         ROS_INFO("damping value of Joint %d is not positive, setting equalt to 10/inertia",iAx);
@@ -236,8 +269,8 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
         m_damping(iAx)=damping.at(iAx);
         m_damping_dafault(iAx)=damping.at(iAx);
       }
-      
-      
+
+
       if (stiffness.at(iAx)<0)
       {
         ROS_INFO("maximum fitness value of Joint %d is negative, setting equal to 0",iAx);
@@ -265,7 +298,7 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
   ROS_INFO("[ %s ] init OK controller",  m_controller_nh.getNamespace().c_str());
 
   return true;
-  
+
 }
 
 void JointImpedanceController::starting(const ros::Time& time)
@@ -300,7 +333,7 @@ void JointImpedanceController::stopping(const ros::Time& time)
 void JointImpedanceController::update(const ros::Time& time, const ros::Duration& period)
 {
   m_queue.callAvailable();
-  
+
 
   if (m_is_configured)
   {
@@ -354,7 +387,6 @@ void JointImpedanceController::update(const ros::Time& time, const ros::Duration
     for (unsigned int idx=0;idx<m_nax;idx++)
       m_x(idx)=std::max(m_lower_limits(idx),std::min(m_upper_limits(idx),m_x(idx)));
 
-
     for (unsigned int iAx=0;iAx<m_nax;iAx++)
       m_joint_handles.at(iAx).setCommand(m_x(iAx),m_Dx(iAx),0.0);
   }
@@ -369,7 +401,7 @@ void JointImpedanceController::update(const ros::Time& time, const ros::Duration
       ROS_DEBUG("configured");
     }
   }
-  
+
 }
 
 void JointImpedanceController::setTargetCallback(const sensor_msgs::JointStateConstPtr& msg)
@@ -413,6 +445,7 @@ void JointImpedanceController::setEffortCallback(const sensor_msgs::JointStateCo
     {
       m_torque(iAx)=tmp_msg.effort.at(iAx);
     }
+
   }
   catch(...)
   {
@@ -430,13 +463,25 @@ void JointImpedanceController::setWrenchCallback(const geometry_msgs::WrenchStam
     return;
   }
 
+  if(m_init_wrench)
+  {
+    m_wrench_0(0)=msg->wrench.force.x;
+    m_wrench_0(1)=msg->wrench.force.y;
+    m_wrench_0(2)=msg->wrench.force.z;
+    m_wrench_0(3)=msg->wrench.torque.x;
+    m_wrench_0(4)=msg->wrench.torque.y;
+    m_wrench_0(5)=msg->wrench.torque.z;
+
+    m_init_wrench = false;
+  }
+
   Eigen::Vector6d wrench_of_sensor_in_sensor;
-  wrench_of_sensor_in_sensor(0)=msg->wrench.force.x;
-  wrench_of_sensor_in_sensor(1)=msg->wrench.force.y;
-  wrench_of_sensor_in_sensor(2)=msg->wrench.force.z;
-  wrench_of_sensor_in_sensor(3)=msg->wrench.torque.x;
-  wrench_of_sensor_in_sensor(4)=msg->wrench.torque.y;
-  wrench_of_sensor_in_sensor(5)=msg->wrench.torque.z;
+  wrench_of_sensor_in_sensor(0)=msg->wrench.force.x  - m_wrench_0(0);
+  wrench_of_sensor_in_sensor(1)=msg->wrench.force.y  - m_wrench_0(1);
+  wrench_of_sensor_in_sensor(2)=msg->wrench.force.z  - m_wrench_0(2);
+  wrench_of_sensor_in_sensor(3)=msg->wrench.torque.x - m_wrench_0(3);
+  wrench_of_sensor_in_sensor(4)=msg->wrench.torque.y - m_wrench_0(4);
+  wrench_of_sensor_in_sensor(5)=msg->wrench.torque.z - m_wrench_0(5);
 
   Eigen::Affine3d T_base_tool=m_chain_bt->getTransformation(m_x);
   Eigen::MatrixXd jacobian_of_tool_in_base = m_chain_bt->getJacobian(m_x);
@@ -448,6 +493,7 @@ void JointImpedanceController::setWrenchCallback(const geometry_msgs::WrenchStam
 
   m_torque=jacobian_of_tool_in_base.transpose()*wrench_of_tool_in_base;
   m_effort_ok=true;
+
 }
 
 }  // end namespace cnr_control

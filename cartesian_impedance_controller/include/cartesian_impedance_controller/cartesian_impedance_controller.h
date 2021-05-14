@@ -87,6 +87,7 @@ protected:
   Eigen::VectorXd m_k;
   Eigen::VectorXd m_k_init;
   Eigen::Vector6d m_wrench_deadband;
+  Eigen::Vector6d m_wrench_0;
   Eigen::VectorXd m_DDq_deadband;
 
   Eigen::Vector6d m_wrench_of_tool_in_base_with_deadband;
@@ -97,6 +98,7 @@ protected:
   bool m_is_configured;
   bool m_target_ok;
   bool m_effort_ok;
+  bool m_init_wrench;
 
   std::shared_ptr<ros_helper::SubscriptionNotifier<sensor_msgs::JointState>> m_target_sub;
   std::shared_ptr<ros_helper::SubscriptionNotifier<geometry_msgs::WrenchStamped>> m_wrench_sub;
