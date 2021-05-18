@@ -99,6 +99,7 @@ protected:
   bool m_target_ok;
   bool m_effort_ok;
   bool m_init_wrench;
+  bool m_zeroing_sensor_at_startup;
 
   std::shared_ptr<ros_helper::SubscriptionNotifier<sensor_msgs::JointState>> m_target_sub;
   std::shared_ptr<ros_helper::SubscriptionNotifier<geometry_msgs::WrenchStamped>> m_wrench_sub;
