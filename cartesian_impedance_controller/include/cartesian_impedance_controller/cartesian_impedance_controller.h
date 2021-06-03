@@ -27,27 +27,27 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
 
-# include <ros/ros.h>
-# include <ros/callback_queue.h>
-# include <cnr_hardware_interface/posveleff_command_interface.h>
-# include <controller_interface/controller.h>
-# include <subscription_notifier/subscription_notifier.h>
-# include <sensor_msgs/JointState.h>
-# include <geometry_msgs/WrenchStamped.h>
-# include <rosdyn_core/primitives.h>
-# include <name_sorting/name_sorting.h>
-
-
+#include <ros/ros.h>
+#include <ros/callback_queue.h>
+#include <cnr_hardware_interface/posveleff_command_interface.h>
+#include <controller_interface/controller.h>
+#include <subscription_notifier/subscription_notifier.h>
+#include <sensor_msgs/JointState.h>
+#include <geometry_msgs/WrenchStamped.h>
+#include <rosdyn_core/primitives.h>
+#include <name_sorting/name_sorting.h>
+#include <cnr_controller_interface/cnr_joint_command_controller_interface.h>
 
 namespace cnr_control
 {
-class CartImpedanceController : public controller_interface::Controller<hardware_interface::PosVelEffJointInterface>
+class CartImpedanceController : public cnr::control::JointCommandController<
+        hardware_interface::PosVelEffJointHandle, hardware_interface::PosVelEffJointInterface>
 {
 public:
-  bool init(hardware_interface::PosVelEffJointInterface* hw, ros::NodeHandle& root_nh, ros::NodeHandle& controller_nh);
-  void update(const ros::Time& time, const ros::Duration& period);
-  void starting(const ros::Time& time);
-  void stopping(const ros::Time& time);
+  bool doInit();
+  bool doUpdate  (const ros::Time& time, const ros::Duration& period);
+  bool doStarting(const ros::Time& time);
+  bool doStopping(const ros::Time& time);
 
 protected:
   hardware_interface::PosVelEffJointInterface* m_hw;

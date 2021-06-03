@@ -1,22 +1,19 @@
 #include <joint_impedance_controller/joint_impedance_controller.h>
 #include <pluginlib/class_list_macros.h>
 
-PLUGINLIB_EXPORT_CLASS(cnr_control::JointImpedanceController, controller_interface::ControllerBase);
+PLUGINLIB_EXPORT_CLASS(cnr_control::JointImpedanceController, controller_interface::ControllerBase)
 
 
 namespace cnr_control
 {
 
 
-bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface* hw, ros::NodeHandle& root_nh, ros::NodeHandle& controller_nh)
+bool JointImpedanceController::doInit()
 {
 
-  ROS_INFO("[ %s ] init controller",  m_controller_nh.getNamespace().c_str());
-  m_root_nh = root_nh;
-  m_controller_nh = controller_nh;
-  m_hw = hw;
+  CNR_INFO(this->logger(),this->getControllerNh().getNamespace().c_str()<<" init controller");
 
-  m_controller_nh.setCallbackQueue(&m_queue);
+  this->getControllerNh().setCallbackQueue(&m_queue);
 
   try
   {
@@ -28,35 +25,29 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
     std::string external_torques = "external_torques";
     std::string external_wrench = "external_wrench";
 
-    if (!m_controller_nh.getParam("joint_target_topic", joint_target))
+    if (!this->getControllerNh().getParam("joint_target_topic", joint_target))
     {
-      ROS_INFO_STREAM(m_controller_nh.getNamespace()+"/'joint_target' does not exist. Default value 'joint_target' superimposed.");
+      ROS_INFO_STREAM(this->getControllerNh().getNamespace()+"/'joint_target' does not exist. Default value 'joint_target' superimposed.");
       joint_target = "joint_target";
     }
 
-
-    if (!controller_nh.getParam("controlled_joint",m_joint_names))
-    {
-      ROS_DEBUG("/controlled_joint not specified, using all");
-      m_joint_names=m_hw->getNames();
-    }
-    m_nax=m_joint_names.size();
+    m_nax=this->jointNames().size();
 
 
-    ROS_INFO("subscribing %s",joint_target.c_str());
-    m_target_sub.reset(new ros_helper::SubscriptionNotifier<sensor_msgs::JointState>(m_controller_nh,joint_target,1));
+    CNR_INFO(this->logger(),"subscribing "<<joint_target.c_str());
+    m_target_sub.reset(new ros_helper::SubscriptionNotifier<sensor_msgs::JointState>(this->getControllerNh(),joint_target,1));
     m_target_sub->setAdvancedCallback(boost::bind(&cnr_control::JointImpedanceController::setTargetCallback,this,_1));
 
-    if (!m_controller_nh.getParam("use_wrench", m_use_wrench))
+    if (!this->getControllerNh().getParam("use_wrench", m_use_wrench))
     {
-      ROS_WARN_STREAM(m_controller_nh.getNamespace()+"/'use_wrench' does not exist. Default value false.");
+      ROS_WARN_STREAM(this->getControllerNh().getNamespace()+"/'use_wrench' does not exist. Default value false.");
       m_use_wrench = false;
     }
 
     bool zeroing_sensor_at_startup;
-    if (!m_controller_nh.getParam("zeroing_sensor_at_startup", zeroing_sensor_at_startup))
+    if (!this->getControllerNh().getParam("zeroing_sensor_at_startup", zeroing_sensor_at_startup))
     {
-      ROS_INFO_STREAM(m_controller_nh.getNamespace()+"/'zeroing_sensor_at_startup' does not exist. Default value true.");
+      ROS_INFO_STREAM(this->getControllerNh().getNamespace()+"/'zeroing_sensor_at_startup' does not exist. Default value true.");
     }
     if(zeroing_sensor_at_startup)
         m_init_wrench = true;
@@ -66,63 +57,57 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
     Eigen::Vector3d gravity;
     gravity << 0, 0, -9.806;
     std::string robot_description;
-    if (!m_root_nh.getParam("/robot_description", robot_description))
+    if (!this->getRootNh().getParam("/robot_description", robot_description))
     {
       ROS_FATAL_STREAM("Parameter '/robot_description' does not exist");
-      return false;
+      CNR_RETURN_FALSE(this->logger());
     }
 
     urdf::Model urdf_model;
     urdf_model.initParam("robot_description");
 
-    if (!m_controller_nh.getParam("base_frame",m_base_frame))
+    if (!this->getControllerNh().getParam("base_frame",m_base_frame))
     {
-      ROS_ERROR("base_link not defined");
+      CNR_ERROR(this->logger(),"base_link not defined");
       return 0;
     }
-    if (!m_controller_nh.getParam("tool_frame",m_tool_frame))
+    if (!this->getControllerNh().getParam("tool_frame",m_tool_frame))
     {
-      ROS_ERROR("tool_link not defined");
+      CNR_ERROR(this->logger(),"tool_link not defined");
       return 0;
     }
 
     m_chain_bt = rosdyn::createChain(urdf_model,m_base_frame,m_tool_frame,gravity);
-    m_chain_bt->setInputJointsName(m_joint_names);
+    m_chain_bt->setInputJointsName(this->jointNames());
 
     if (m_use_wrench)
     {
-      if (!m_controller_nh.getParam("sensor_frame",m_sensor_frame))
+      if (!this->getControllerNh().getParam("sensor_frame",m_sensor_frame))
       {
-        ROS_ERROR("sensor_frame not defined");
+        CNR_ERROR(this->logger(),"sensor_frame not defined");
         return 0;
       }
       m_chain_bs = rosdyn::createChain(urdf_model,m_base_frame,m_sensor_frame,gravity);
-      m_chain_bs->setInputJointsName(m_joint_names);
-      if (!m_controller_nh.getParam("external_wrench_topic", external_wrench ))
+      m_chain_bs->setInputJointsName(this->jointNames());
+      if (!this->getControllerNh().getParam("external_wrench_topic", external_wrench ))
       {
-        ROS_INFO_STREAM(m_controller_nh.getNamespace()+"/'external_wrench' does not exist. Default value 'external_wrench' superimposed.");
+        ROS_INFO_STREAM(this->getControllerNh().getNamespace()+"/'external_wrench' does not exist. Default value 'external_wrench' superimposed.");
         external_wrench = "external_wrench";
       }
-      m_wrench_sub.reset(new ros_helper::SubscriptionNotifier<geometry_msgs::WrenchStamped>(m_controller_nh,external_wrench,1));
+      m_wrench_sub.reset(new ros_helper::SubscriptionNotifier<geometry_msgs::WrenchStamped>(this->getControllerNh(),external_wrench,1));
       m_wrench_sub->setAdvancedCallback(boost::bind(&cnr_control::JointImpedanceController::setWrenchCallback,this,_1));
     }
     else
     {
-      if (!m_controller_nh.getParam("external_torques_topic", external_torques ))
+      if (!this->getControllerNh().getParam("external_torques_topic", external_torques ))
       {
-        ROS_INFO_STREAM(m_controller_nh.getNamespace()+"/'external_torques' does not exist. Default value 'external_torques' superimposed.");
+        ROS_INFO_STREAM(this->getControllerNh().getNamespace()+"/'external_torques' does not exist. Default value 'external_torques' superimposed.");
         external_torques = "external_torques";
       }
-      m_effort_sub.reset(new ros_helper::SubscriptionNotifier<sensor_msgs::JointState>(m_controller_nh,external_torques,1));
+      m_effort_sub.reset(new ros_helper::SubscriptionNotifier<sensor_msgs::JointState>(this->getControllerNh(),external_torques,1));
       m_effort_sub->setAdvancedCallback(boost::bind(&cnr_control::JointImpedanceController::setEffortCallback,this,_1));
     }
 
-
-    m_joint_handles.resize(m_nax);
-    for (unsigned int iAx=0;iAx<m_nax;iAx++)
-    {
-      m_joint_handles.at(iAx)=m_hw->getHandle(m_joint_names.at(iAx));
-    }
 
     m_target.resize(m_nax);
     m_Dtarget.resize(m_nax);
@@ -144,107 +129,52 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
     m_DDx.setZero();
     m_torque.setZero();
 
-    m_velocity_limits.resize(m_nax);
-    m_acceleration_limits.resize(m_nax);
-    m_upper_limits.resize(m_nax);
-    m_lower_limits.resize(m_nax);
-
-
-
-    for (unsigned int iAx=0; iAx<m_nax; iAx++)
-    {
-      m_upper_limits(iAx) = urdf_model.getJoint(m_joint_names.at(iAx))->limits->upper;
-      m_lower_limits(iAx) = urdf_model.getJoint(m_joint_names.at(iAx))->limits->lower;
-
-
-      if ((m_upper_limits(iAx)==0) && (m_lower_limits(iAx)==0))
-      {
-        m_upper_limits(iAx)=std::numeric_limits<double>::infinity();
-        m_lower_limits(iAx)=-std::numeric_limits<double>::infinity();
-        ROS_INFO("upper and lower limits are both equal to 0, set +/- infinity");
-      }
-
-      bool has_velocity_limits;
-      if (!m_root_nh.getParam("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/has_velocity_limits",has_velocity_limits))
-        has_velocity_limits=false;
-      bool has_acceleration_limits;
-      if (!m_root_nh.getParam("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/has_acceleration_limits",has_acceleration_limits))
-        has_acceleration_limits=false;
-
-      m_velocity_limits(iAx)= urdf_model.getJoint(m_joint_names.at(iAx))->limits->velocity;
-
-      if (has_velocity_limits)
-      {
-        double vel;
-        if (!m_root_nh.getParam("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/max_velocity",vel))
-        {
-          ROS_ERROR_STREAM("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/max_velocity is not defined");
-          return false;
-        }
-        if (vel<m_velocity_limits(iAx))
-          m_velocity_limits(iAx)=vel;
-      }
-
-      if (has_acceleration_limits)
-      {
-        double acc;
-        if (!m_root_nh.getParam("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/max_acceleration",acc))
-        {
-          ROS_ERROR_STREAM("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/max_acceleration is not defined");
-          return false;
-        }
-        m_acceleration_limits(iAx)=acc;
-      }
-      else
-        m_acceleration_limits(iAx)=10*m_velocity_limits(iAx);
-    }
-
     std::vector<double> inertia, damping, stiffness, torque_deadband;
-    if (!m_controller_nh.getParam("inertia", inertia))
+    if (!this->getControllerNh().getParam("inertia", inertia))
     {
-      ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'inertia' does not exist");
-      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-      return false;
+      ROS_FATAL_STREAM(this->getControllerNh().getNamespace()+"/'inertia' does not exist");
+      CNR_FATAL(this->logger(),"ERROR DURING INITIALIZATION CONTROLLER ''"<< this->getControllerNh().getNamespace().c_str());
+      CNR_RETURN_FALSE(this->logger());
     }
-    if (!m_controller_nh.getParam("stiffness", stiffness))
+    if (!this->getControllerNh().getParam("stiffness", stiffness))
     {
-      ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'stiffness' does not exist");
-      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-      return false;
+      ROS_FATAL_STREAM(this->getControllerNh().getNamespace()+"/'stiffness' does not exist");
+      CNR_FATAL(this->logger(),"ERROR DURING INITIALIZATION CONTROLLER ''"<< this->getControllerNh().getNamespace().c_str());
+      CNR_RETURN_FALSE(this->logger());
     }
 
-    if(m_controller_nh.hasParam("damping_ratio"))
+    if(this->getControllerNh().hasParam("damping_ratio"))
     {
-        ROS_INFO("using damping ratio");
+        CNR_INFO(this->logger(),"using damping ratio");
         std::vector<double> damping_ratio;
-        if (!m_controller_nh.getParam("damping_ratio", damping_ratio))
+        if (!this->getControllerNh().getParam("damping_ratio", damping_ratio))
         {
-          ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'damping_ratio' does not exist");
-          ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-          return false;
+          ROS_FATAL_STREAM(this->getControllerNh().getNamespace()+"/'damping_ratio' does not exist");
+          CNR_FATAL(this->logger(),"ERROR DURING INITIALIZATION CONTROLLER ''"<< this->getControllerNh().getNamespace().c_str());
+          CNR_RETURN_FALSE(this->logger());
         }
 
         for (unsigned int iAx=0;iAx<m_nax;iAx++)
         {
           damping.push_back(2*damping_ratio.at(iAx)*sqrt(stiffness.at(iAx)*inertia.at(iAx)));
-          ROS_FATAL_STREAM(damping.at(iAx));
+          CNR_INFO(this->logger(),damping.at(iAx));
         }
     }
     else
     {
-      if (!m_controller_nh.getParam("damping", damping))
+      if (!this->getControllerNh().getParam("damping", damping))
       {
-        ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/'damping' does not exist");
-        ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-        return false;
+        ROS_FATAL_STREAM(this->getControllerNh().getNamespace()+"/'damping' does not exist");
+        CNR_FATAL(this->logger(),"ERROR DURING INITIALIZATION CONTROLLER ''"<< this->getControllerNh().getNamespace().c_str());
+        CNR_RETURN_FALSE(this->logger());
       }
 
     }
 
-    if (!m_controller_nh.getParam("torque_deadband", torque_deadband))
+    if (!this->getControllerNh().getParam("torque_deadband", torque_deadband))
     {
-      ROS_DEBUG_STREAM(m_controller_nh.getNamespace()+"/'torque_deadband' does not exist");
-      ROS_DEBUG("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
+      ROS_DEBUG_STREAM(this->getControllerNh().getNamespace()+"/'torque_deadband' does not exist");
+      CNR_DEBUG(this->logger(),"ERROR DURING INITIALIZATION CONTROLLER ''"<< this->getControllerNh().getNamespace().c_str());
       torque_deadband.resize(m_nax,0);
     }
 
@@ -252,7 +182,7 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
     {
       if (inertia.at(iAx)<=0)
       {
-        ROS_INFO("inertia value of Joint %d is not positive, disabling impedance control for this axis",iAx);
+        CNR_INFO(this->logger(),"inertia value of Joint %d is not positive, disabling impedance control for this axis"<<iAx);
         m_Jinv(iAx)=0.0;
       }
       else
@@ -260,7 +190,7 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
 
       if (damping.at(iAx)<=0)
       {
-        ROS_INFO("damping value of Joint %d is not positive, setting equalt to 10/inertia",iAx);
+        CNR_INFO(this->logger(),"damping value of Joint %d is not positive, setting equalt to 10/inertia"<<iAx);
         m_damping(iAx)=10.0*m_Jinv(iAx);
         m_damping_dafault(iAx)=10.0*m_Jinv(iAx);
       }
@@ -273,7 +203,7 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
 
       if (stiffness.at(iAx)<0)
       {
-        ROS_INFO("maximum fitness value of Joint %d is negative, setting equal to 0",iAx);
+        CNR_INFO(this->logger(),"maximum fitness value of Joint %d is negative, setting equal to 0"<<iAx);
         m_k(iAx)=0.0;
       }
       else
@@ -283,7 +213,7 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
 
       if (torque_deadband.at(iAx)<=0)
       {
-        ROS_INFO("torque_deadband value of Joint %d is not positive, disabling impedance control for this axis",iAx);
+        CNR_INFO(this->logger(),"torque_deadband value of Joint %d is not positive, disabling impedance control for this axis"<<iAx);
         m_torque_deadband(iAx)=0.0;
       }
       else
@@ -292,48 +222,48 @@ bool JointImpedanceController::init(hardware_interface::PosVelEffJointInterface*
   }
   catch(const  std::exception& e)
   {
-    ROS_FATAL("EXCEPTION: %s", e.what());
-    return false;
+    CNR_FATAL(this->logger(),"EXCEPTION: "<< e.what());
+    CNR_RETURN_FALSE(this->logger());
   }
-  ROS_INFO("[ %s ] init OK controller",  m_controller_nh.getNamespace().c_str());
+  CNR_INFO(this->logger(),this->getControllerNh().getNamespace().c_str()<<" init OK controller" );
 
-  return true;
+  CNR_RETURN_TRUE(this->logger());
 
 }
 
-void JointImpedanceController::starting(const ros::Time& time)
+bool JointImpedanceController::doStarting(const ros::Time& time)
 {
-  ROS_INFO("[ %s ] Starting controller",  m_controller_nh.getNamespace().c_str());
+  CNR_TRACE_START(this->logger(),"Starting Controller");
+  CNR_INFO(this->logger(),this->getControllerNh().getNamespace().c_str()<<" Starting controller");
 
   m_queue.callAvailable();
   m_is_configured=m_target_ok && m_effort_ok;
   if (m_is_configured)
   {
-    ROS_DEBUG("Joint Impedance Controller Configured");
+    CNR_DEBUG(this->logger(),"Joint Impedance Controller Configured");
   }
-  for (unsigned int iAx=0;iAx<m_nax;iAx++)
-  {
-    m_x(iAx)=m_joint_handles.at(iAx).getPosition();
-    m_Dx(iAx)=m_joint_handles.at(iAx).getVelocity();
 
-    ROS_DEBUG("iAx=%u, x=%f, Dx=%f",iAx,m_x(iAx),m_Dx(iAx));
-  }
-  ROS_INFO("[ %s ] Started controller",  m_controller_nh.getNamespace().c_str());
+    m_x=this->getPosition();
+    m_Dx=this->getVelocity();
+
+//    CNR_DEBUG(this->logger(),"iAx=%u, x=%f, Dx=%f",iAx,m_x(iAx),m_Dx(iAx));
+  CNR_INFO(this->logger(),this->getControllerNh().getNamespace().c_str()<<" Started controller");
+  CNR_RETURN_TRUE(this->logger());
 }
 
-void JointImpedanceController::stopping(const ros::Time& time)
+bool JointImpedanceController::doStopping(const ros::Time& time)
 {
 
-  for (unsigned int iAx=0;iAx<m_nax;iAx++)
-  {
-    m_joint_handles.at(iAx).setCommand(m_x(iAx),0.0,0.0);
-  }
+    this->setCommandPosition(m_x);
+    CNR_TRACE_START(this->logger(),"Stopping Controller");
+    CNR_RETURN_TRUE(this->logger());
+
 }
 
-void JointImpedanceController::update(const ros::Time& time, const ros::Duration& period)
+bool JointImpedanceController::doUpdate(const ros::Time& time, const ros::Duration& period)
 {
+  CNR_TRACE_START_THROTTLE_DEFAULT(this->logger());
   m_queue.callAvailable();
-
 
   if (m_is_configured)
   {
@@ -347,61 +277,25 @@ void JointImpedanceController::update(const ros::Time& time, const ros::Duration
         m_torque(iAx)=0.0;
     }
 
-
     m_DDx = m_Jinv.cwiseProduct( m_k.cwiseProduct(m_target-m_x) + m_damping.cwiseProduct(m_Dtarget-m_Dx) + m_torque );
-    Eigen::VectorXd saturated_acc=m_DDx;
-    double ratio_acc=1;
-    for (unsigned int idx=0; idx<m_nax; idx++)
-      ratio_acc=std::max(ratio_acc,std::abs(m_DDx(idx))/m_acceleration_limits(idx));
-    saturated_acc/=ratio_acc;
-
-    for (unsigned int idx=0; idx<m_nax; idx++)
-    {
-      //Computing breaking distance
-      double t_break=std::abs(m_Dx(idx))/m_acceleration_limits(idx);
-      double breaking_distance=0.5*m_acceleration_limits(idx)*std::pow(t_break,2.0);
-
-      if (m_x(idx) > (m_upper_limits(idx)-breaking_distance))
-      {
-        if (m_Dx(idx)>0)
-        {
-          ROS_WARN_THROTTLE(2,"Breaking, maximum limit approaching on joint %s",m_joint_names.at(idx).c_str());
-          saturated_acc(idx)=-m_acceleration_limits(idx);
-        }
-      }
-
-      if (m_x(idx) < (m_lower_limits(idx) + breaking_distance))
-      {
-        if (m_Dx(idx) < 0)
-        {
-          ROS_WARN_THROTTLE(2,"Breaking, minimum limit approaching on joint %s",m_joint_names.at(idx).c_str());
-          saturated_acc(idx)=m_acceleration_limits(idx);
-        }
-      }
-    }
-    m_DDx=saturated_acc;
-
     m_x  += m_Dx  * period.toSec() + m_DDx*std::pow(period.toSec(),2.0)*0.5;
     m_Dx += m_DDx * period.toSec();
 
-    for (unsigned int idx=0;idx<m_nax;idx++)
-      m_x(idx)=std::max(m_lower_limits(idx),std::min(m_upper_limits(idx),m_x(idx)));
-
-    for (unsigned int iAx=0;iAx<m_nax;iAx++)
-      m_joint_handles.at(iAx).setCommand(m_x(iAx),m_Dx(iAx),0.0);
+    this->setCommandPosition(m_x);
+    this->setCommandVelocity(m_Dx);
   }
   else
   {
-    ROS_FATAL_STREAM_THROTTLE(2.0,"target: "<<m_target_ok <<", effort"<< m_effort_ok);
-    for (unsigned int iAx=0;iAx<m_nax;iAx++)
-      m_joint_handles.at(iAx).setCommand(m_x(iAx),0.0,0.0);
+    CNR_ERROR_THROTTLE(this->logger(),2.0,"target: "<<m_target_ok <<", effort: "<< m_effort_ok);
+    this->setCommandPosition(m_x);
     m_is_configured=m_target_ok && m_effort_ok;
     if (m_is_configured)
     {
-      ROS_DEBUG("configured");
+      CNR_DEBUG(this->logger(),"configured");
     }
   }
 
+  CNR_RETURN_TRUE_THROTTLE_DEFAULT(this->logger());
 }
 
 void JointImpedanceController::setTargetCallback(const sensor_msgs::JointStateConstPtr& msg)
@@ -409,7 +303,7 @@ void JointImpedanceController::setTargetCallback(const sensor_msgs::JointStateCo
   try
   {
     sensor_msgs::JointState tmp_msg=*msg;
-    if (!name_sorting::permutationName(m_joint_names,tmp_msg.name,tmp_msg.position,tmp_msg.velocity,tmp_msg.effort))
+    if (!name_sorting::permutationName(this->jointNames(),tmp_msg.name,tmp_msg.position,tmp_msg.velocity,tmp_msg.effort))
     {
       ROS_ERROR_THROTTLE(2,"joints not found");
       m_target_ok=false;
@@ -434,7 +328,7 @@ void JointImpedanceController::setEffortCallback(const sensor_msgs::JointStateCo
   try
   {
     sensor_msgs::JointState tmp_msg=*msg;
-    if (!name_sorting::permutationName(m_joint_names,tmp_msg.name,tmp_msg.effort))
+    if (!name_sorting::permutationName(this->jointNames(),tmp_msg.name,tmp_msg.effort))
     {
       ROS_ERROR_THROTTLE(2,"joints not found");
       m_effort_ok=false;
@@ -449,7 +343,7 @@ void JointImpedanceController::setEffortCallback(const sensor_msgs::JointStateCo
   }
   catch(...)
   {
-    ROS_ERROR_THROTTLE(2,"something wrong in target callback");
+    CNR_ERROR_THROTTLE(this->logger(),2.0,"something wrong in target callback");
     m_effort_ok=false;
   }
 }
@@ -459,7 +353,7 @@ void JointImpedanceController::setWrenchCallback(const geometry_msgs::WrenchStam
 
   if (msg->header.frame_id.compare(m_sensor_frame))
   {
-    ROS_ERROR_THROTTLE(2,"sensor frame is %s, it should be %s",msg->header.frame_id.c_str(),m_sensor_frame.c_str());
+    CNR_ERROR_THROTTLE(this->logger(),2.0,"sensor frame is "<<msg->header.frame_id.c_str()<<", it should be "<<m_sensor_frame.c_str());
     return;
   }
 
@@ -474,6 +368,7 @@ void JointImpedanceController::setWrenchCallback(const geometry_msgs::WrenchStam
 
     m_init_wrench = false;
   }
+
 
   Eigen::Vector6d wrench_of_sensor_in_sensor;
   wrench_of_sensor_in_sensor(0)=msg->wrench.force.x  - m_wrench_0(0);

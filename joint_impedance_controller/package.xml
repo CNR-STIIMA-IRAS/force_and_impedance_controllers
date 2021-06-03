@@ -41,6 +41,7 @@
   <!--   <test_depend>gtest</test_depend> -->
   <buildtool_depend>catkin</buildtool_depend>
   <build_depend>controller_interface</build_depend>
+  <build_depend>cnr_controller_interface</build_depend>
   <build_depend>controller_manager</build_depend>
   <build_depend>hardware_interface</build_depend>
   <build_depend>rosdyn_core</build_depend>
@@ -49,9 +50,12 @@
   <build_depend>sensor_msgs</build_depend>
   <build_depend>subscription_notifier</build_depend>
   <build_depend>name_sorting</build_depend>
+  <build_depend>eigen_matrix_utils</build_depend>
 
-  
+
+
   <run_depend>controller_interface</run_depend>
+  <run_depend>cnr_controller_interface</run_depend>
   <run_depend>controller_manager</run_depend>
   <run_depend>hardware_interface</run_depend>
   <run_depend>rosdyn_core</run_depend>
@@ -60,6 +64,7 @@
   <run_depend>sensor_msgs</run_depend>
   <run_depend>subscription_notifier</run_depend>
   <run_depend>name_sorting</run_depend>
+  <run_depend>eigen_matrix_utils</run_depend>
 
 
 

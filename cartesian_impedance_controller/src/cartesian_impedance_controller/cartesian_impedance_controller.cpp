@@ -9,32 +9,28 @@ namespace cnr_control
 {
 
 
-bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* hw, ros::NodeHandle& root_nh, ros::NodeHandle& controller_nh)
+bool CartImpedanceController::doInit()
 {
-  m_root_nh = root_nh;
-  m_controller_nh = controller_nh;
-  m_hw = hw;
 
-  m_controller_nh.setCallbackQueue(&m_queue);
+  this->getControllerNh().setCallbackQueue(&m_queue);
 
-
-  if (!m_controller_nh.getParam("base_frame",m_base_frame))
+  if (!this->getControllerNh().getParam("base_frame",m_base_frame))
   {
-    ROS_ERROR("%s/base_frame not defined", m_controller_nh.getNamespace().c_str());
-    return false;
+    CNR_ERROR(this->logger(),this->getControllerNh().getNamespace().c_str()<<"/base_frame not defined");
+    CNR_RETURN_FALSE(this->logger());
   }
-  if (!m_controller_nh.getParam("tool_frame",m_tool_frame))
+  if (!this->getControllerNh().getParam("tool_frame",m_tool_frame))
   {
-    ROS_ERROR("%s/tool_frame not defined", m_controller_nh.getNamespace().c_str());
-    return false;
+    CNR_ERROR(this->logger(),this->getControllerNh().getNamespace().c_str()<<"/tool_frame not defined");
+    CNR_RETURN_FALSE(this->logger());
   }
-  if (!m_controller_nh.getParam("sensor_frame",m_sensor_frame))
+  if (!this->getControllerNh().getParam("sensor_frame",m_sensor_frame))
   {
-    ROS_ERROR("%s/sensor_frame not defined", m_controller_nh.getNamespace().c_str());
-    return false;
+    CNR_ERROR(this->logger(),this->getControllerNh().getNamespace().c_str()<<"/sensor_frame not defined");
+    CNR_RETURN_FALSE(this->logger());
   }
 
-  if (!m_controller_nh.getParam("base_is_reference", m_base_is_reference))
+  if (!this->getControllerNh().getParam("base_is_reference", m_base_is_reference))
   {
     ROS_INFO("Using a base reference Cartesian impedance as default");
     m_base_is_reference=true;
@@ -46,8 +42,8 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
   urdf::Model urdf_model;
   if (!urdf_model.initParam("/robot_description"))
   {
-    ROS_ERROR("Urdf robot_description '%s' does not exist",(m_controller_nh.getNamespace()+"/robot_description").c_str());
-    return false;
+    CNR_ERROR(this->logger(),"Urdf robot_description does not exist"<<this->getControllerNh().getNamespace()<<"/robot_description");
+    CNR_RETURN_FALSE(this->logger());
   }
   Eigen::Vector3d gravity;
   gravity << 0, 0, -9.806;
@@ -59,57 +55,40 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
   {
     std::string joint_target = "joint_target_topic";
     std::string external_wrench = "external_wrench";
-    std::string scaling_in_topic;
-    std::string scaling_out_topic;
-    if (!m_controller_nh.getParam("joint_target_topic", joint_target))
+
+    if (!this->getControllerNh().getParam("joint_target_topic", joint_target))
     {
-      ROS_WARN_STREAM(m_controller_nh.getNamespace()+"/joint_target_topic does not exist. Default value 'joint_target_topic' superimposed");
+      ROS_WARN_STREAM(this->getControllerNh().getNamespace()+"/joint_target_topic does not exist. Default value 'joint_target_topic' superimposed");
       joint_target = "joint_target_topic";
     }
 
-    if (!m_controller_nh.getParam("external_wrench_topic", external_wrench ))
+    if (!this->getControllerNh().getParam("external_wrench_topic", external_wrench ))
     {
-      ROS_WARN_STREAM(m_controller_nh.getNamespace()+"/external_wrench does not exist. Default value 'external_wrench' superimposed");
+      ROS_WARN_STREAM(this->getControllerNh().getNamespace()+"/external_wrench does not exist. Default value 'external_wrench' superimposed");
       external_wrench = "external_wrench";
     }
 
-
     bool zeroing_sensor_at_startup;
-    if (!m_controller_nh.getParam("zeroing_sensor_at_startup", zeroing_sensor_at_startup))
+    if (!this->getControllerNh().getParam("zeroing_sensor_at_startup", zeroing_sensor_at_startup))
     {
-      ROS_INFO_STREAM(m_controller_nh.getNamespace()+"/'zeroing_sensor_at_startup' does not exist. Default value true.");
+      ROS_INFO_STREAM(this->getControllerNh().getNamespace()+"/'zeroing_sensor_at_startup' does not exist. Default value true.");
     }
     if(zeroing_sensor_at_startup)
         m_init_wrench = true;
     else
         m_init_wrench = false;
 
+    m_nAx=this->jointNames().size();
+    // note this->jointNames() can be in different order with to the chain joints.
+    m_chain_bs->setInputJointsName(this->jointNames());
+    m_chain_bt->setInputJointsName(this->jointNames());
 
-
-    if (!controller_nh.getParam("controlled_joint",m_joint_names))
-    {
-      ROS_INFO("/controlled_joint not specified, using all");
-      m_joint_names=m_hw->getNames();
-    }
-    m_nAx=m_joint_names.size();
-    // note m_joint_names can be in different order with to the chain joints.
-    m_chain_bs->setInputJointsName(m_joint_names);
-    m_chain_bt->setInputJointsName(m_joint_names);
-
-    m_joint_handles.resize(m_nAx);
-    for (unsigned int iAx=0;iAx<m_nAx;iAx++)
-      m_joint_handles.at(iAx)=m_hw->getHandle(m_joint_names.at(iAx));
-
-    m_chain_bt->setInputJointsName(m_joint_names);
-    m_chain_bs->setInputJointsName(m_joint_names);
     m_DDq_deadband.resize(m_nAx);
     m_target.resize(m_nAx);
     m_Dtarget.resize(m_nAx);
     m_x.resize(m_nAx);
     m_Dx.resize(m_nAx);
     m_DDx.resize(m_nAx);
-    m_velocity_limits.resize(m_nAx);
-    m_effort_limits.resize(m_nAx);
     m_wrench_of_tool_in_base_with_deadband.resize(6);
     m_wrench_of_sensor_in_sensor.resize(6);
 
@@ -128,103 +107,47 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
     m_wrench_of_tool_in_base_with_deadband.setZero();
     m_wrench_of_sensor_in_sensor.setZero();
 
-    m_velocity_limits.resize(m_nAx);
-    m_acceleration_limits.resize(m_nAx);
-    m_upper_limits.resize(m_nAx);
-    m_lower_limits.resize(m_nAx);
-
-
-
-    for (unsigned int iAx=0; iAx<m_nAx; iAx++)
-    {
-      m_upper_limits(iAx) = urdf_model.getJoint(m_joint_names.at(iAx))->limits->upper;
-      m_lower_limits(iAx) = urdf_model.getJoint(m_joint_names.at(iAx))->limits->lower;
-
-
-      if ((m_upper_limits(iAx)==0) && (m_lower_limits(iAx)==0))
-      {
-        m_upper_limits(iAx)=std::numeric_limits<double>::infinity();
-        m_lower_limits(iAx)=-std::numeric_limits<double>::infinity();
-        ROS_INFO("upper and lower limits are both equal to 0, set +/- infinity");
-      }
-
-      bool has_velocity_limits;
-      if (!m_root_nh.getParam("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/has_velocity_limits",has_velocity_limits))
-        has_velocity_limits=false;
-      bool has_acceleration_limits;
-      if (!m_root_nh.getParam("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/has_acceleration_limits",has_acceleration_limits))
-        has_acceleration_limits=false;
-
-      m_velocity_limits(iAx)= urdf_model.getJoint(m_joint_names.at(iAx))->limits->velocity;
-
-      if (has_velocity_limits)
-      {
-        double vel;
-        if (!m_root_nh.getParam("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/max_velocity",vel))
-        {
-          ROS_ERROR_STREAM("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/max_velocity is not defined");
-          return false;
-        }
-        if (vel<m_velocity_limits(iAx))
-          m_velocity_limits(iAx)=vel;
-      }
-
-      if (has_acceleration_limits)
-      {
-        double acc;
-        if (!m_root_nh.getParam("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/max_acceleration",acc))
-        {
-          ROS_ERROR_STREAM("/robot_description_planning/joint_limits/"+m_joint_names.at(iAx)+"/max_acceleration is not defined");
-          return false;
-        }
-        m_acceleration_limits(iAx)=acc;
-      }
-      else
-        m_acceleration_limits(iAx)=10*m_velocity_limits(iAx);
-    }
-
-
     std::vector<double> inertia, damping, stiffness, wrench_deadband;
-    if (!m_controller_nh.getParam("inertia", inertia))
+    if (!this->getControllerNh().getParam("inertia", inertia))
     {
-      ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/inertia does not exist");
-      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-      return false;
+      ROS_FATAL_STREAM(this->getControllerNh().getNamespace()+"/inertia does not exist");
+      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", this->getControllerNh().getNamespace().c_str());
+      CNR_RETURN_FALSE(this->logger());
     }
 
     if (inertia.size()!=6)
     {
-      ROS_ERROR("inertia should be have six values");
-      return false;
+      CNR_ERROR(this->logger(),"inertia should be have six values");
+      CNR_RETURN_FALSE(this->logger());
     }
 
-    if (!m_controller_nh.getParam("stiffness", stiffness))
+    if (!this->getControllerNh().getParam("stiffness", stiffness))
     {
-      ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/stiffness does not exist");
-      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-      return false;
+      ROS_FATAL_STREAM(this->getControllerNh().getNamespace()+"/stiffness does not exist");
+      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", this->getControllerNh().getNamespace().c_str());
+      CNR_RETURN_FALSE(this->logger());
     }
 
     if (stiffness.size()!=6)
     {
-      ROS_ERROR("%s/stiffness should be have six values", m_controller_nh.getNamespace().c_str());
-      return false;
+      CNR_ERROR(this->logger(),this->getControllerNh().getNamespace().c_str()<<"/stiffness should be have six values");
+      CNR_RETURN_FALSE(this->logger());
     }
 
-    if (m_controller_nh.hasParam("damping_ratio"))
+    if (this->getControllerNh().hasParam("damping_ratio"))
     {
       std::vector<double> damping_ratio;
-      if (!m_controller_nh.getParam("damping_ratio", damping_ratio))
+      if (!this->getControllerNh().getParam("damping_ratio", damping_ratio))
       {
-        ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/damping_ratio is not a vector of doubles");
-        ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-        return false;
+        ROS_FATAL_STREAM(this->getControllerNh().getNamespace()+"/damping_ratio is not a vector of doubles");
+        ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", this->getControllerNh().getNamespace().c_str());
+        CNR_RETURN_FALSE(this->logger());
       }
 
       if (damping_ratio.size()!=6)
       {
-        ROS_ERROR("damping should be have six values");
-        return false;
+        CNR_ERROR(this->logger(),"damping should be have six values");
+        CNR_RETURN_FALSE(this->logger());
       }
 
       damping.resize(6,0);
@@ -232,35 +155,35 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
       {
         if (stiffness.at(iAx)<=0)
         {
-          ROS_ERROR("damping ratio can be specified only for positive stiffness values (stiffness of Joint %s is not positive)",m_joint_names.at(iAx).c_str());
-          return false;
+          CNR_ERROR(this->logger(),"damping ratio can be specified only for positive stiffness values (stiffness of Joint "<<this->jointNames().at(iAx).c_str()<<" is not positive)");
+          CNR_RETURN_FALSE(this->logger());
         }
         damping.at(iAx)=2*damping_ratio.at(iAx)*std::sqrt(stiffness.at(iAx)*inertia.at(iAx));
       }
     }
-    else if (!m_controller_nh.getParam("damping", damping))
+    else if (!this->getControllerNh().getParam("damping", damping))
     {
-      ROS_FATAL_STREAM(m_controller_nh.getNamespace()+"/damping does not exist");
-      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", m_controller_nh.getNamespace().c_str());
-      return false;
+      ROS_FATAL_STREAM(this->getControllerNh().getNamespace()+"/damping does not exist");
+      ROS_FATAL("ERROR DURING INITIALIZATION CONTROLLER '%s'", this->getControllerNh().getNamespace().c_str());
+      CNR_RETURN_FALSE(this->logger());
     }
 
     if (damping.size()!=6)
     {
-      ROS_ERROR("%s/damping should be have six values", m_controller_nh.getNamespace().c_str());
-      return false;
+      CNR_ERROR(this->logger(),this->getControllerNh().getNamespace().c_str()<<"/damping should be have six values");
+      CNR_RETURN_FALSE(this->logger());
     }
 
-    if (!m_controller_nh.getParam("wrench_deadband", wrench_deadband))
+    if (!this->getControllerNh().getParam("wrench_deadband", wrench_deadband))
     {
-      ROS_WARN_STREAM(m_controller_nh.getNamespace()+"/wrench_deadband does not exist, set to zero");
+      ROS_WARN_STREAM(this->getControllerNh().getNamespace()+"/wrench_deadband does not exist, set to zero");
       wrench_deadband.resize(6,0);
     }
 
     if (wrench_deadband.size()!=6)
     {
-      ROS_ERROR("%s/wrench_deadband should be have six values", m_controller_nh.getNamespace().c_str());
-      return false;
+      CNR_ERROR(this->logger(),this->getControllerNh().getNamespace().c_str()<<"/wrench_deadband should be have six values");
+      CNR_RETURN_FALSE(this->logger());
     }
 
 
@@ -268,8 +191,8 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
     {
       if (inertia.at(iAx)<=0)
       {
-        ROS_ERROR("inertia value of Joint %s is not positive",m_joint_names.at(iAx).c_str());
-        return false;
+        CNR_ERROR(this->logger(),"inertia value of Joint "<<this->jointNames().at(iAx).c_str()<<" is not positive");
+        CNR_RETURN_FALSE(this->logger());
       }
       else
       {
@@ -279,8 +202,8 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
 
       if (damping.at(iAx)<=0)
       {
-        ROS_ERROR("damping value of Joint %s is not positive",m_joint_names.at(iAx).c_str());
-        return false;
+        CNR_ERROR(this->logger(),"damping value of Joint "<<this->jointNames().at(iAx).c_str()<<" is not positive");
+        CNR_RETURN_FALSE(this->logger());
       }
       else
       {
@@ -290,8 +213,8 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
 
       if (stiffness.at(iAx)<0)
       {
-        ROS_ERROR("stiffness value of Joint %s is negative",m_joint_names.at(iAx).c_str());
-        return false;
+        CNR_ERROR(this->logger(),"stiffness value of Joint "<<this->jointNames().at(iAx).c_str()<<" is negative");
+        CNR_RETURN_FALSE(this->logger());
       }
       else
       {
@@ -309,74 +232,69 @@ bool CartImpedanceController::init(hardware_interface::PosVelEffJointInterface* 
 
     }
 
-    ROS_DEBUG("Controller '%s' controls the following joints:",m_controller_nh.getNamespace().c_str());
-    for (unsigned int iAx=0;iAx<m_nAx;iAx++)
-    {
-      ROS_DEBUG(" - %s",m_joint_names.at(iAx).c_str());
-      ROS_DEBUG("position limits = [%f, %f]",m_lower_limits(iAx),m_upper_limits(iAx));
-      ROS_DEBUG("velocity limits = [%f, %f]",-m_velocity_limits(iAx),m_velocity_limits(iAx));
-      ROS_DEBUG("acceleration limits = [%f, %f]",-m_acceleration_limits(iAx),m_acceleration_limits(iAx));
-    }
-
-    m_target_sub.reset(new ros_helper::SubscriptionNotifier<sensor_msgs::JointState>(m_controller_nh,joint_target,1));
+    m_target_sub.reset(new ros_helper::SubscriptionNotifier<sensor_msgs::JointState>(this->getControllerNh(),joint_target,1));
     m_target_sub->setAdvancedCallback(boost::bind(&cnr_control::CartImpedanceController::setTargetCallback,this,_1));
 
-    m_wrench_sub.reset(new ros_helper::SubscriptionNotifier<geometry_msgs::WrenchStamped>(m_controller_nh,external_wrench,1));
+    m_wrench_sub.reset(new ros_helper::SubscriptionNotifier<geometry_msgs::WrenchStamped>(this->getControllerNh(),external_wrench,1));
     m_wrench_sub->setAdvancedCallback(boost::bind(&cnr_control::CartImpedanceController::setWrenchCallback,this,_1));
 
 
     ROS_DEBUG("Subscribing to %s",joint_target.c_str());
     ROS_DEBUG("Subscribing to %s",external_wrench.c_str());
-    ROS_DEBUG("Subscribing to %s",scaling_in_topic.c_str());
   }
   catch(const  std::exception& e)
   {
     ROS_FATAL("EXCEPTION: %s", e.what());
-    return false;
+    CNR_RETURN_FALSE(this->logger());
   }
 
-  ROS_INFO("Controller '%s' well initialized",m_controller_nh.getNamespace().c_str());
+  ROS_INFO("Controller '%s' well initialized",this->getControllerNh().getNamespace().c_str());
 
-  return true;
+  CNR_RETURN_TRUE(this->logger());
 }
 
 
 
-void CartImpedanceController::starting(const ros::Time& time)
+bool CartImpedanceController::doStarting(const ros::Time& time)
 {
-  for (unsigned int iAx=0;iAx<m_nAx;iAx++)
-  {
-    m_x(iAx)=m_joint_handles.at(iAx).getPosition();
-    m_Dx(iAx)=m_joint_handles.at(iAx).getVelocity();
-    m_joint_handles.at(iAx).setCommand(m_x(iAx),m_Dx(iAx),0.0);
-  }
+  CNR_TRACE_START(this->logger(),"Starting Controller");
+  m_x  = this->getPosition();
+  m_Dx = this->getVelocity();
+  this->setCommandPosition(m_x);
+  this->setCommandVelocity(m_Dx);
+
   m_target=m_x;
   m_Dtarget=m_Dx;
 
   m_queue.callAvailable();
 
-  ROS_INFO("Controller '%s' well started",m_controller_nh.getNamespace().c_str());
+  ROS_INFO("Controller '%s' well started",this->getControllerNh().getNamespace().c_str());
   m_is_configured = (m_target_ok && m_effort_ok);
   if (m_is_configured)
     ROS_DEBUG("configured");
+
+  CNR_RETURN_TRUE(this->logger());
 }
 
-void CartImpedanceController::stopping(const ros::Time& time)
+bool CartImpedanceController::doStopping(const ros::Time& time)
 {
-  ROS_INFO("[ %s ] Stopping controller", m_controller_nh.getNamespace().c_str());
+  ROS_INFO("[ %s ] Stopping controller", this->getControllerNh().getNamespace().c_str());
+  CNR_TRACE_START(this->logger(),"Starting Controller");
+  CNR_RETURN_TRUE(this->logger());
 }
 
 
 
-void CartImpedanceController::update(const ros::Time& time, const ros::Duration& period)
+bool CartImpedanceController::doUpdate(const ros::Time& time, const ros::Duration& period)
 {
+  CNR_TRACE_START_THROTTLE_DEFAULT(this->logger());
   try
   {
     m_queue.callAvailable();
   }
   catch (std::exception& e)
   {
-    ROS_ERROR_THROTTLE(1,"Something wrong in the callback: %s",e.what());
+    CNR_ERROR_THROTTLE(this->logger(),1.0,"Something wrong in the callback: "<<e.what());
   }
 
   m_is_configured = (m_target_ok && m_effort_ok);
@@ -435,49 +353,13 @@ void CartImpedanceController::update(const ros::Time& time, const ros::Duration&
     ROS_WARN_THROTTLE(1,"SINGULARITY POINT");
 
   m_DDx = svd.solve(cart_acc_of_t_in_b-cart_acc_nl_of_t_in_b);
-
-  Eigen::VectorXd saturated_acc=m_DDx;
-  double ratio_acc=1;
-  for (unsigned int idx=0; idx<m_nAx; idx++)
-  ratio_acc=std::max(ratio_acc,std::abs(m_DDx(idx))/m_acceleration_limits(idx));
-  saturated_acc/=ratio_acc;
-
-  for (unsigned int idx=0; idx<m_nAx; idx++)
-  {
-    //Computing breaking distance
-    double t_break=std::abs(m_Dx(idx))/m_acceleration_limits(idx);
-    double breaking_distance=0.5*m_acceleration_limits(idx)*std::pow(t_break,2.0);
-
-    if (m_x(idx) > (m_upper_limits(idx)-breaking_distance))
-    {
-      if (m_Dx(idx)>0)
-      {
-        ROS_WARN_THROTTLE(2,"Breaking, maximum limit approaching on joint %s",m_joint_names.at(idx).c_str());
-        saturated_acc(idx)=-m_acceleration_limits(idx);
-      }
-    }
-
-    if (m_x(idx) < (m_lower_limits(idx) + breaking_distance))
-    {
-      if (m_Dx(idx) < 0)
-      {
-        ROS_WARN_THROTTLE(2,"Breaking, minimum limit approaching on joint %s",m_joint_names.at(idx).c_str());
-        saturated_acc(idx)=m_acceleration_limits(idx);
-      }
-    }
-  }
-  m_DDx=saturated_acc;
-
   m_x  += m_Dx  * period.toSec() + m_DDx*std::pow(period.toSec(),2.0)*0.5;
   m_Dx += m_DDx * period.toSec();
 
-  for (unsigned int idx=0;idx<m_nAx;idx++)
-    m_x(idx)=std::max(m_lower_limits(idx),std::min(m_upper_limits(idx),m_x(idx)));
+  this->setCommandPosition(m_x);
+  this->setCommandVelocity(m_Dx);
 
-  for (unsigned int iAx=0;iAx<m_nAx;iAx++)
-  {
-    m_joint_handles.at(iAx).setCommand(m_x(iAx),m_Dx(iAx),0.0);
-  }
+  CNR_RETURN_TRUE_THROTTLE_DEFAULT(this->logger());
 }
 
 
@@ -487,9 +369,9 @@ void CartImpedanceController::setTargetCallback(const sensor_msgs::JointStateCon
   try
   {
     sensor_msgs::JointState tmp_msg=*msg;
-    if (!name_sorting::permutationName(m_joint_names,tmp_msg.name,tmp_msg.position,tmp_msg.velocity,tmp_msg.effort))
+    if (!name_sorting::permutationName(this->jointNames(),tmp_msg.name,tmp_msg.position,tmp_msg.velocity,tmp_msg.effort))
     {
-      ROS_ERROR("joints not found");
+      CNR_ERROR(this->logger(),"joints not found");
       m_target_ok=false;
       return;
     }
@@ -506,7 +388,7 @@ void CartImpedanceController::setTargetCallback(const sensor_msgs::JointStateCon
   }
   catch(...)
   {
-    ROS_ERROR("Something wrong in target callback");
+    CNR_ERROR(this->logger(),"Something wrong in target callback");
     m_target_ok=false;
   }
 }
@@ -567,7 +449,7 @@ void CartImpedanceController::setWrenchCallback(const geometry_msgs::WrenchStamp
   }
   catch(...)
   {
-    ROS_ERROR_THROTTLE(1,"Something wrong in wrench callback");
+    CNR_ERROR_THROTTLE(this->logger(),1.0,"Something wrong in wrench callback");
     m_effort_ok=false;
   }
 }

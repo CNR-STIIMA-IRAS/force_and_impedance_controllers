@@ -1,10 +1,17 @@
-cmake_minimum_required(VERSION 2.8.3)
+cmake_minimum_required(VERSION 3.1)
+
 project(cartesian_impedance_controller)
-add_compile_options(-std=c++11 -funroll-loops -Wall -Ofast)
-set(CMAKE_BUILD_TYPE Release)
+
+if(NOT CMAKE_BUILD_TYPE)
+  set(CMAKE_BUILD_TYPE Release)
+endif()
+set(CMAKE_CXX_STANDARD 14)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(catkin REQUIRED COMPONENTS
   controller_interface
+  cnr_controller_interface
   controller_manager
   hardware_interface
   rosdyn_core
@@ -19,7 +26,7 @@ find_package(catkin REQUIRED COMPONENTS
 catkin_package(
   INCLUDE_DIRS include
   LIBRARIES ${PROJECT_NAME}
-  CATKIN_DEPENDS controller_interface controller_manager hardware_interface cnr_hardware_interface rosdyn_core roscpp sensor_msgs
+  CATKIN_DEPENDS controller_interface cnr_controller_interface controller_manager hardware_interface cnr_hardware_interface rosdyn_core roscpp sensor_msgs
   DEPENDS
 )
   

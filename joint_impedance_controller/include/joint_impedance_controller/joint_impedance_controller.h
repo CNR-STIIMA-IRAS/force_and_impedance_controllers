@@ -1,30 +1,35 @@
 #pragma once
-# include <controller_interface/controller.h>
-# include <cnr_hardware_interface/posveleff_command_interface.h>
+
+//#include <controller_interface/controller.h>
+#include <cnr_hardware_interface/posveleff_command_interface.h>
 #include <subscription_notifier/subscription_notifier.h>
-# include <rosdyn_core/primitives.h>
-# include <thread>
-# include <mutex>
-# include <boost/graph/graph_concepts.hpp>
-# include <ros/ros.h>
-# include <sensor_msgs/JointState.h>
-# include <pluginlib/class_list_macros.h>
-# include <geometry_msgs/WrenchStamped.h>
-# include <ros/callback_queue.h>
-# include <name_sorting/name_sorting.h>
+#include <rosdyn_core/primitives.h>
+#include <thread>
+#include <mutex>
+#include <boost/graph/graph_concepts.hpp>
+#include <ros/ros.h>
+#include <sensor_msgs/JointState.h>
+#include <pluginlib/class_list_macros.h>
+#include <geometry_msgs/WrenchStamped.h>
+#include <ros/callback_queue.h>
+#include <name_sorting/name_sorting.h>
 #include <urdf_model/model.h>
 #include <urdf_parser/urdf_parser.h>
+#include <cnr_controller_interface/cnr_joint_command_controller_interface.h>
+#include <eigen_matrix_utils/overloads.h>
 
 namespace cnr_control
 {
 
-class JointImpedanceController : public controller_interface::Controller<hardware_interface::PosVelEffJointInterface>
+//class JointImpedanceController : public controller_interface::Controller<hardware_interface::PosVelEffJointInterface>
+class JointImpedanceController : public cnr::control::JointCommandController<
+        hardware_interface::PosVelEffJointHandle, hardware_interface::PosVelEffJointInterface>
 {
 public:
-  bool init(hardware_interface::PosVelEffJointInterface* hw, ros::NodeHandle& root_nh, ros::NodeHandle& controller_nh);
-  void update(const ros::Time& time, const ros::Duration& period);
-  void starting(const ros::Time& time);
-  void stopping(const ros::Time& time);
+    bool doInit();
+    bool doUpdate  (const ros::Time& time, const ros::Duration& period);
+    bool doStarting(const ros::Time& time);
+    bool doStopping(const ros::Time& time);
 
 protected:
 
